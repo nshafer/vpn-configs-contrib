@@ -464,6 +464,7 @@ apply_port_to_transmission() {
 
   sleep 10
   # shellcheck disable=SC2086
+  log "PIA: Forcing transmission to test the new port $pf_port"
   transmission-remote "$host" $auth --port-test
 }
 
