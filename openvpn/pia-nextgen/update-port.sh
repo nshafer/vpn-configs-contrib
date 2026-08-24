@@ -52,7 +52,8 @@ readonly CURL_RETRY_DELAY=15
 readonly OPENVPN_CREDENTIALS=/config/openvpn-credentials.txt
 readonly TRANSMISSION_CREDENTIALS=/config/transmission-credentials.txt
 
-# Cached reservation, on the /config volume so it survives a restart.
+# Cached reservation, on the /config volume so it survives a restart. May be
+# overridden by the settings file configure-openvpn.sh writes; see below.
 PF_STATE_FILE="${PIA_PF_STATE_FILE:-/config/pia-nextgen-portforward.json}"
 
 # Set to true to skip certificate verification. Only useful if PIA changes
@@ -60,6 +61,7 @@ PF_STATE_FILE="${PIA_PF_STATE_FILE:-/config/pia-nextgen-portforward.json}"
 PIA_PF_INSECURE="${PIA_PF_INSECURE:-false}"
 
 # Populated as we go.
+provider_home=""      # directory holding the configs, the CA and the settings
 pf_cn=""              # server common name, verified against the API certificate
 pf_region=""          # region id, only used to make error messages actionable
 pf_gateway=""         # VPN gateway address
@@ -103,11 +105,32 @@ read_config_metadata() {
     fatal_error "PIA: no OpenVPN config found at '${CONFIG:-<unset>}', cannot tell which server to ask for a port"
   fi
 
+  # OpenVPN runs --route-up scripts with a scrubbed environment, so everything
+  # here arrives through /etc/transmission/environment-variables.sh, which
+  # persistEnvironment.py fills from an allowlist. CONFIG is on that list;
+  # VPN_PROVIDER_HOME is not, so take the provider directory from the config
+  # we were handed rather than trusting VPN_PROVIDER_HOME to be set.
+  provider_home=$(dirname "$CONFIG")
+
   pf_cn=$(sed -n 's/^; pia_cn \(.*\)$/\1/p' "$CONFIG" | head -1)
   pf_region=$(sed -n 's/^; pia_region \(.*\)$/\1/p' "$CONFIG" | head -1)
   pf_region="${pf_region:-<unknown>}"
 
   log "PIA: port forwarding for region '$pf_region'${pf_cn:+ (server $pf_cn)}"
+}
+
+# The PIA_* settings are not on persistEnvironment.py's allowlist either, so
+# configure-openvpn.sh writes them next to the configs for us to pick up.
+load_provider_settings() {
+  local settings="${provider_home}/pia-nextgen.env"
+
+  if [[ -r "$settings" ]]; then
+    # shellcheck source=/dev/null
+    . "$settings"
+  fi
+
+  PIA_PF_INSECURE="${PIA_PF_INSECURE:-false}"
+  PF_STATE_FILE="${PIA_PF_STATE_FILE:-/config/pia-nextgen-portforward.json}"
 }
 
 ##
@@ -127,7 +150,7 @@ find_gateway() {
 
 # Decide how API calls authenticate the server, and fail early if we cannot.
 setup_tls() {
-  local cacert="${VPN_PROVIDER_HOME}/ca.rsa.4096.crt"
+  local cacert="${provider_home}/ca.rsa.4096.crt"
 
   if [[ "${PIA_PF_INSECURE,,}" == "true" ]]; then
     log "PIA: WARNING: PIA_PF_INSECURE is set, the port forwarding API certificate will not be verified"
@@ -451,6 +474,7 @@ apply_port_to_transmission() {
 main() {
   require_tools
   read_config_metadata
+  load_provider_settings
   find_gateway
   setup_tls
   find_api_host

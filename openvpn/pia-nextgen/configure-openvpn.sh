@@ -150,6 +150,20 @@ Unset PIA_PF to use every region."
         fi
     done
 
+    # start.sh's persistEnvironment.py carries only an allowlist of variables
+    # through to update-port.sh, and the PIA_* settings are not on it. OpenVPN
+    # also scrubs the environment for its --route-up scripts, so hand them over
+    # in a file beside the configs instead. Deliberately not named *.ovpn.
+    {
+        echo "# Written by configure-openvpn.sh on each container start."
+        echo "# update-port.sh reads this because start.sh does not persist"
+        echo "# these variables into the environment it runs under."
+        printf 'PIA_PF_INSECURE=%q\n' "${PIA_PF_INSECURE:-false}"
+        if [[ -n "${PIA_PF_STATE_FILE:-}" ]]; then
+            printf 'PIA_PF_STATE_FILE=%q\n' "$PIA_PF_STATE_FILE"
+        fi
+    } > "${VPN_PROVIDER_HOME}/pia-nextgen.env"
+
     log "PIA next-gen: generated $generated_count configs for $protocol/$port"
 
     # Select a random server as default.ovpn
