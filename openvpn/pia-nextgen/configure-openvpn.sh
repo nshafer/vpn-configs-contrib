@@ -24,6 +24,16 @@
 
 source /etc/openvpn/utils.sh
 
+# Flatten a value onto a single line before it goes into a message, so one log
+# event stays one line. utils.sh logs with printf "%b", which would also turn a
+# literal backslash-n in a response body into a line break, so backslashes are
+# doubled to survive that.
+pia_nextgen_oneline() {
+    printf '%s' "$*" \
+        | tr '\n\r\t' '   ' \
+        | sed -e 's/\\/\\\\/g' -e 's/  */ /g' -e 's/^ *//' -e 's/ *$//'
+}
+
 pia_nextgen_generate_configs() {
     local serverlist_url="https://serverlist.piaservers.net/vpninfo/servers/v6"
     local template="${VPN_PROVIDER_HOME}/strong.template"
@@ -70,12 +80,10 @@ pia_nextgen_generate_configs() {
         --retry 3 --retry-delay 5 "$serverlist_url" | head -1)
 
     if [[ -z "$serverlist" ]]; then
-        fatal_error "PIA next-gen: got an empty server list from $serverlist_url.
-Check that the container has network access before the tunnel comes up."
+        fatal_error "PIA next-gen: got an empty server list from $serverlist_url. Check that the container has network access before the tunnel comes up."
     fi
     if ! jq -e . >/dev/null 2>&1 <<< "$serverlist"; then
-        fatal_error "PIA next-gen: could not parse the server list from $serverlist_url as JSON.
-First 200 bytes: ${serverlist:0:200}"
+        fatal_error "PIA next-gen: could not parse the server list from $serverlist_url as JSON. First 200 bytes: $(pia_nextgen_oneline "${serverlist:0:200}")"
     fi
 
     # One jq pass for the whole list: region id, the region name normalised to
@@ -95,8 +103,7 @@ First 200 bytes: ${serverlist:0:200}"
 
     if [[ -z "$regions" ]]; then
         if [[ "$pf_only" == true ]]; then
-            fatal_error "PIA next-gen: no regions in the server list advertise port forwarding over $protocol.
-Unset PIA_PF to use every region."
+            fatal_error "PIA next-gen: no regions in the server list advertise port forwarding over $protocol. Unset PIA_PF to use every region."
         fi
         fatal_error "PIA next-gen: no regions in the server list offer OpenVPN over $protocol."
     fi
