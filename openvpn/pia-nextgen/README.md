@@ -82,7 +82,8 @@ reservation is cached under `/config` instead (see below).
 | `PIA_NEXTGEN_PROTOCOL` | `udp` | `udp` connects on port 8080, `tcp` on 8443 — the same ports PIA's `connect_to_openvpn_with_token.sh` uses. The server list advertises alternatives (853/123/53 for UDP, 80/443/853 for TCP) but this provider does not use them, and the legacy PIA ports (1197, 1198) belong to the old network, not this one. |
 | `PIA_PF` | unset | Set to `true` to generate configs **only** for regions that advertise port forwarding. Useful as a guard so you cannot accidentally connect somewhere that cannot forward, at least according to the PIA API. |
 | `PIA_PF_INSECURE` | `false` | Skip TLS verification of the port forwarding API. Only useful if PIA changes what the API presents; not a supported configuration. |
-| `PIA_PF_STATE_FILE` | `/config/pia-nextgen-portforward.json` | Where the cached port reservation is stored. |
+| `PIA_PF_REUSE` | `true` | Keep the port across container restarts by caching the reservation. Set to `false` to get a new port on every start; nothing is then read from or written to `PIA_PF_STATE_FILE`. |
+| `PIA_PF_STATE_FILE` | `/config/pia-nextgen-portforward.json` | Where the cached port reservation is stored. Ignored when `PIA_PF_REUSE=false`. |
 
 Note that the container needs outbound network access *before* the tunnel comes up, since the server
 list is fetched while the config is being generated. If your firewall blocks that, startup fails
@@ -105,7 +106,9 @@ How it works, and what is worth knowing about it:
 * Because of that, the reservation is cached in `PIA_PF_STATE_FILE` on the `/config` volume and
   reused across container restarts — and even across regions — instead of burning a new port every
   time. PIA exposes the same idea as `PAYLOAD_AND_SIGNATURE` in `port_forwarding.sh`. You keep the
-  same port for the life of the reservation, which is renewed a day before it expires.
+  same port for the life of the reservation, which is renewed a day before it expires. Set
+  `PIA_PF_REUSE=false` if you would rather have a new port on every start; the cache is then bypassed
+  in both directions, and an existing state file is left alone rather than read.
 * The port must be re-bound at least every 15 minutes or PIA drops it. `update-port.sh` refreshes it
   every 15 minutes for as long as the container runs.
 * If a refresh fails the reservation is gone, and the container **stops** rather than leave

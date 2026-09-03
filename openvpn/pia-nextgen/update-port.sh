@@ -17,7 +17,8 @@
 # Payload plus signature *is* the reservation: it is not tied to the server
 # that issued it, so we cache it and reuse it across container restarts
 # instead of burning a new port every time. PIA exposes the same idea as the
-# PAYLOAD_AND_SIGNATURE variable in port_forwarding.sh.
+# PAYLOAD_AND_SIGNATURE variable in port_forwarding.sh. Set PIA_PF_REUSE=false
+# to skip the cache and take a new port on every start.
 #
 # All API calls verify TLS the way PIA's script does. The API presents a
 # certificate whose common name is the server's "cn" from the server list,
@@ -55,6 +56,10 @@ readonly TRANSMISSION_CREDENTIALS=/config/transmission-credentials.txt
 # Cached reservation, on the /config volume so it survives a restart. May be
 # overridden by the settings file configure-openvpn.sh writes; see below.
 PF_STATE_FILE="${PIA_PF_STATE_FILE:-/config/pia-nextgen-portforward.json}"
+
+# Set to false to not cache the reservation at all, so every container start
+# asks PIA for a new port instead of picking the old one back up.
+PIA_PF_REUSE="${PIA_PF_REUSE:-true}"
 
 # Set to true to skip certificate verification. Only useful if PIA changes
 # what the port forwarding API presents; it is not a supported configuration.
@@ -140,6 +145,7 @@ load_provider_settings() {
   fi
 
   PIA_PF_INSECURE="${PIA_PF_INSECURE:-false}"
+  PIA_PF_REUSE="${PIA_PF_REUSE:-true}"
   PF_STATE_FILE="${PIA_PF_STATE_FILE:-/config/pia-nextgen-portforward.json}"
 }
 
@@ -321,8 +327,19 @@ bind_port() {
 # Caching the reservation across restarts
 ##
 
+# PIA_PF_REUSE turns the cache off entirely: nothing is read and nothing is
+# written, so each start asks PIA for a fresh port.
+reuse_enabled() {
+  [[ "${PIA_PF_REUSE,,}" == "true" ]]
+}
+
 save_reservation() {
   local dir
+
+  if ! reuse_enabled; then
+    return 0
+  fi
+
   dir=$(dirname "$PF_STATE_FILE")
 
   if ! mkdir -p "$dir" 2>/dev/null; then
@@ -349,6 +366,11 @@ save_reservation() {
 # and even across regions.
 load_reservation() {
   local payload signature port expires_at now
+
+  if ! reuse_enabled; then
+    log "PIA: PIA_PF_REUSE is '$PIA_PF_REUSE', requesting a new port instead of reusing a cached one"
+    return 1
+  fi
 
   [[ -r "$PF_STATE_FILE" ]] || return 1
 

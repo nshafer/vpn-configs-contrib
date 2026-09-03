@@ -166,6 +166,7 @@ pia_nextgen_generate_configs() {
         echo "# update-port.sh reads this because start.sh does not persist"
         echo "# these variables into the environment it runs under."
         printf 'PIA_PF_INSECURE=%q\n' "${PIA_PF_INSECURE:-false}"
+        printf 'PIA_PF_REUSE=%q\n' "${PIA_PF_REUSE:-true}"
         if [[ -n "${PIA_PF_STATE_FILE:-}" ]]; then
             printf 'PIA_PF_STATE_FILE=%q\n' "$PIA_PF_STATE_FILE"
         fi
